@@ -39,9 +39,9 @@ void RC_Channel_Copter::mode_switch_changed(modeswitch_pos_t new_pos)
         // if none of the Aux Switches are set to Simple or Super Simple Mode then
         // set Simple Mode using stored parameters from EEPROM
         if (BIT_IS_SET(copter.g.super_simple, new_pos)) {
-            copter.set_simple_mode(2);
+            copter.set_simple_mode(Copter::SimpleMode::SUPERSIMPLE);
         } else {
-            copter.set_simple_mode(BIT_IS_SET(copter.g.simple_modes, new_pos));
+            copter.set_simple_mode(BIT_IS_SET(copter.g.simple_modes, new_pos) ? Copter::SimpleMode::SIMPLE : Copter::SimpleMode::NONE);
         }
     }
 }
@@ -96,6 +96,7 @@ void RC_Channel_Copter::init_aux_function(const aux_func_t ch_option, const AuxS
     case AUX_FUNC::ZIGZAG:
     case AUX_FUNC::ZIGZAG_Auto:
     case AUX_FUNC::ZIGZAG_SaveWP:
+    case AUX_FUNC::ACRO:
         break;
     case AUX_FUNC::ACRO_TRAINER:
     case AUX_FUNC::ATTCON_ACCEL_LIM:
@@ -113,6 +114,9 @@ void RC_Channel_Copter::init_aux_function(const aux_func_t ch_option, const AuxS
     case AUX_FUNC::SURFACE_TRACKING:
     case AUX_FUNC::WINCH_ENABLE:
         do_aux_function(ch_option, ch_flag);
+        break;
+    case AUX_FUNC::AIRMODE:
+        do_aux_function_change_air_mode(ch_flag);
         break;
     default:
         RC_Channel::init_aux_function(ch_option, ch_flag);
@@ -170,17 +174,24 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
 
         case AUX_FUNC::SIMPLE_MODE:
             // low = simple mode off, middle or high position turns simple mode on
-            copter.set_simple_mode(ch_flag == AuxSwitchPos::HIGH ||
-                                   ch_flag == AuxSwitchPos::MIDDLE);
+            copter.set_simple_mode((ch_flag == AuxSwitchPos::LOW) ? Copter::SimpleMode::NONE : Copter::SimpleMode::SIMPLE);
             break;
 
-        case AUX_FUNC::SUPERSIMPLE_MODE:
-            // low = simple mode off, middle = simple mode, high = super simple mode
-            // there is an assumption here that the ch_flag
-            // enumeration's values match the different sorts of
-            // simple mode used in set_simple_mode
-            copter.set_simple_mode((uint8_t)ch_flag);
+        case AUX_FUNC::SUPERSIMPLE_MODE: {
+            Copter::SimpleMode newmode = Copter::SimpleMode::NONE;
+            switch (ch_flag) {
+            case AuxSwitchPos::LOW:
+                break;
+            case AuxSwitchPos::MIDDLE:
+                newmode = Copter::SimpleMode::SIMPLE;
+                break;
+            case AuxSwitchPos::HIGH:
+                newmode = Copter::SimpleMode::SUPERSIMPLE;
+                break;
+            }
+            copter.set_simple_mode(newmode);
             break;
+        }
 
         case AUX_FUNC::RTL:
 #if MODE_RTL_ENABLED == ENABLED
@@ -353,7 +364,7 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
             break;
 
         case AUX_FUNC::RETRACT_MOUNT:
-#if MOUNT == ENABLE
+#if HAL_MOUNT_ENABLED
             switch (ch_flag) {
                 case AuxSwitchPos::HIGH:
                     copter.camera_mount.set_mode(MAV_MOUNT_MODE_RETRACT);
@@ -438,36 +449,20 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
 #if WINCH_ENABLED == ENABLED
             switch (ch_flag) {
                 case AuxSwitchPos::HIGH:
-                    // high switch maintains current position
-                    copter.g2.winch.release_length(0.0f);
-                    AP::logger().Write_Event(LogEvent::WINCH_LENGTH_CONTROL);
+                    // high switch position stops winch using rate control
+                    copter.g2.winch.set_desired_rate(0.0f);
                     break;
                 case AuxSwitchPos::MIDDLE:
                 case AuxSwitchPos::LOW:
                     // all other position relax winch
                     copter.g2.winch.relax();
-                    AP::logger().Write_Event(LogEvent::WINCH_RELAXED);
                     break;
                 }
 #endif
             break;
 
         case AUX_FUNC::WINCH_CONTROL:
-#if WINCH_ENABLED == ENABLED
-            switch (ch_flag) {
-                case LOW:
-                    // raise winch at maximum speed
-                    copter.g2.winch.set_desired_rate(-copter.g2.winch.get_rate_max());
-                    break;
-                case HIGH:
-                    // lower winch at maximum speed
-                    copter.g2.winch.set_desired_rate(copter.g2.winch.get_rate_max());
-                    break;
-                case MIDDLE:
-                    copter.g2.winch.set_desired_rate(0.0f);
-                    break;
-                }
-#endif
+            // do nothing, used to control the rate of the winch and is processed within AP_Winch
             break;
 
 #ifdef USERHOOK_AUXSWITCH
@@ -522,6 +517,13 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
 
         case AUX_FUNC::ALTHOLD:
             do_aux_function_change_mode(Mode::Number::ALT_HOLD, ch_flag);
+            break;
+
+
+        case AUX_FUNC::ACRO:
+#if MODE_ACRO_ENABLED == ENABLED
+            do_aux_function_change_mode(Mode::Number::ACRO, ch_flag);
+#endif
             break;
 
         case AUX_FUNC::FLOWHOLD:
@@ -586,9 +588,31 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
             }
 #endif
             break;
+
+        case AUX_FUNC::AIRMODE:
+            do_aux_function_change_air_mode(ch_flag);
+#if MODE_ACRO_ENABLED == ENABLED && FRAME_CONFIG != HELI_FRAME
+            copter.mode_acro.air_mode_aux_changed();
+#endif
+            break;
             
     default:
         RC_Channel::do_aux_function(ch_option, ch_flag);
+        break;
+    }
+}
+
+// change air-mode status
+void RC_Channel_Copter::do_aux_function_change_air_mode(const AuxSwitchPos ch_flag)
+{
+    switch (ch_flag) {
+    case AuxSwitchPos::HIGH:
+        copter.air_mode = AirMode::AIRMODE_ENABLED;
+        break;
+    case AuxSwitchPos::MIDDLE:
+        break;
+    case AuxSwitchPos::LOW:
+        copter.air_mode = AirMode::AIRMODE_DISABLED;
         break;
     }
 }
