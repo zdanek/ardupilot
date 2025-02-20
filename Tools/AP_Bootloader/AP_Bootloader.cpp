@@ -72,6 +72,8 @@ int main(void)
     custom_startup();
 #endif
 
+    led_pulses(5);
+
     flash_init();
 
 #if AP_FLASH_ECC_CHECK_ENABLED
@@ -202,6 +204,7 @@ int main(void)
         chThdSleep(chTimeMS2I(20));
     }
 #endif
+
 
     if (try_boot) {
         jump_to_app();
