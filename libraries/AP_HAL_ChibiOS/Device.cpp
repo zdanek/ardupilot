@@ -16,6 +16,7 @@
 #include <hal.h>
 #include "Device.h"
 
+#include <AP_Common/ExpandingString.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_HAL/utility/OwnPtr.h>
 #include <stdio.h>
@@ -127,13 +128,24 @@ AP_HAL::Device::PeriodicHandle DeviceBus::register_periodic_callback(uint32_t pe
         default:
             break;
         }
-
+        DEV_PRINTF("Creating bus thread %s\n", name);
         thread_ctx = thread_create_alloc(THD_WORKING_AREA_SIZE(HAL_DEVICE_THREAD_STACK),
                                          name,
                                          thread_priority,           /* Initial priority.    */
                                          DeviceBus::bus_thread,    /* Thread function.     */
                                          this);                     /* Thread parameter.    */
         if (thread_ctx == nullptr) {
+            void* test_mem = chHeapAlloc(NULL, THD_WORKING_AREA_SIZE(HAL_DEVICE_THREAD_STACK));
+            if (!test_mem) {
+                DEV_PRINTF("Heap allocation failed!\n");
+
+              ExpandingString str;
+                hal.util->mem_info(str);
+                DEV_PRINTF("Heap info:\n%s\n", str.get_string());
+            } else {
+                DEV_PRINTF("Heap allocation successful! Unknown cause of fail creating bus thread for %s\n", name);
+                chHeapFree(test_mem);
+            }
             AP_HAL::panic("Failed to create bus thread %s", name);
         }
     }

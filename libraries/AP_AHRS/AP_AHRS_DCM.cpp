@@ -263,7 +263,7 @@ void
 AP_AHRS_DCM::check_matrix(void)
 {
     if (_dcm_matrix.is_nan()) {
-        //Serial.printf("ERROR: DCM matrix NAN\n");
+        hal.console->printf("ERROR: DCM matrix NAN\n");
         AP_AHRS_DCM::reset(true);
         return;
     }
@@ -283,8 +283,8 @@ AP_AHRS_DCM::check_matrix(void)
 
             // normalisation didn't fix the problem! We're
             // in real trouble. All we can do is reset
-            //Serial.printf("ERROR: DCM matrix error. _dcm_matrix.c.x=%f\n",
-            //	   _dcm_matrix.c.x);
+            hal.console->printf("ERROR: DCM matrix error. _dcm_matrix.c.x=%f\n",
+            	   _dcm_matrix.c.x);
             AP_AHRS_DCM::reset(true);
         }
     }
@@ -360,6 +360,7 @@ AP_AHRS_DCM::normalize(void)
             !renorm(t2, _dcm_matrix.c)) {
         // Our solution is blowing up and we will force back
         // to last euler angles
+        hal.console->printf("ERROR: DCM matrix renormalisation error\n");
         _last_failure_ms = AP_HAL::millis();
         AP_AHRS_DCM::reset(true);
     }

@@ -157,7 +157,7 @@ HAL_ChibiOS::HAL_ChibiOS() :
 #endif
         &analogIn,
         &storageDriver,
-        &serial0Driver,
+        &HAL_CONSOLE_SERIAL,
         &gpioDriver,
         &rcinDriver,
         &rcoutDriver,
