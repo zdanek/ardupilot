@@ -72,8 +72,6 @@ int main(void)
     custom_startup();
 #endif
 
-    led_pulses(5);
-
     flash_init();
 
 #if AP_FLASH_ECC_CHECK_ENABLED
