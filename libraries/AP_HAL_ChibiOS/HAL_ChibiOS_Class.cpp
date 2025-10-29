@@ -72,6 +72,10 @@ static Empty::UARTDriver serial8Driver;
 static Empty::UARTDriver serial9Driver;
 #endif
 
+#ifndef HAL_CONSOLE_SERIAL
+#define HAL_CONSOLE_SERIAL serial0Driver
+#endif
+
 #if HAL_USE_I2C == TRUE && defined(HAL_I2C_DEVICE_LIST)
 static ChibiOS::I2CDeviceManager i2cDeviceManager;
 #else
